@@ -1,12 +1,9 @@
-require 'rubygems'
-require 'sinatra'
-require 'sequel'
-require 'rest_client'
-require 'zlib'
-require 'json'
+require 'appengine-rack'
 
-Sinatra::Application.set :run => false
-Sinatra::Application.set :environment => ENV['RACK_ENV']
+AppEngine::Rack.configure_app(
+  :application => 'watercoolr',
+  :version => 1
+)
 
 require 'watercoolr.rb'
 run Sinatra::Application

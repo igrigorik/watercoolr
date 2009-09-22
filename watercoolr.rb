@@ -1,26 +1,26 @@
 require 'rubygems'
 require 'sinatra'
-require 'sequel'
-require 'httpclient'
 require 'zlib'
-require 'json'
+require 'json/pure'
+require 'uri'
+require 'dm-core'
 
-configure do
-  DB = Sequel.connect(ENV['DATABASE_URL'] || 'sqlite://watercoolr.db')
-  unless DB.table_exists? "channels"
-    DB.create_table :channels do
-      primary_key :id
-      varchar :name, :size => 32
-    end
-  end
+# patch Net/HTTP interface
+require 'appengine-apis/urlfetch'
+Net::HTTP = AppEngine::URLFetch::HTTP
 
-  unless DB.table_exists? "subscribers"
-    DB.create_table :subscribers do
-      primary_key :id
-      foreign_key :channel_id
-      varchar :url, :size => 128
-    end
-  end
+# Configure DataMapper to use the App Engine datastore 
+DataMapper.setup(:default, "appengine://auto")
+
+class Channel
+  include DataMapper::Resource
+  property :name, String, :key => true
+end
+
+class Subscriber
+  include DataMapper::Resource
+  property :channel_name, String, :key => true
+  property :url, String, :lazy => false
 end
 
 helpers do
@@ -31,16 +31,14 @@ helpers do
   end
 end
 
-
-
 get '/' do
   erb :index
 end
 
 post '/channels' do
   id = gen_id
-  DB[:channels] << { :name => id }
-  { :id => id.to_s }.to_json
+  channel = Channel.create(:name => id)
+  { :id => channel.name }.to_json
 end
 
 post '/subscribers' do
@@ -48,10 +46,11 @@ post '/subscribers' do
   data = JSON.parse(params[:data])
   channel_name = data['channel'] || 'boo'
   url = data['url'] || nil
-  if rec = DB[:channels].filter(:name => channel_name).first
-    if url and rec[:id]
-      unless DB[:subscribers].filter(:channel_id => rec[:id], :url => url).first
-        res = DB[:subscribers] << { :channel_id => rec[:id], :url => url }
+  
+  if rec = Channel.first(:name => channel_name)
+    if url and rec.name
+      unless Subscriber.first(:channel_name => rec.name, :url => url)
+        res = Subscriber.create(:channel_name => rec.name, :url => url)
       end
     end
   end
@@ -67,18 +66,22 @@ post '/messages' do
   data = JSON.parse(params[:data])
   channel_name = data['channel'] || 'boo'
   message = data['message'] || nil
-  if rec = DB[:channels].filter(:name => channel_name).first
-    if message and rec[:id]
-      subs = DB[:subscribers].filter(:channel_id => rec[:id]).to_a
+  
+  if rec = Channel.first(:name => channel_name)  
+    if message and rec.name
+      subs = Subscriber.all(:channel_name => rec.name)
       if subs
         subs.each do |sub|
           begin
-            HTTPClient.post(sub[:url], :data => message)
+            url = URI.parse(sub.url)
+            conn = Net::HTTP.new(url.host, url.port)
+            resp, body = conn.post(url.path, message)
           rescue
           end
           res = true
         end
       end
+      
     end
   end
   if res
