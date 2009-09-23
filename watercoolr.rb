@@ -1,6 +1,5 @@
 require 'rubygems'
 require 'sinatra'
-require 'zlib'
 require 'json/pure'
 require 'uri'
 require 'dm-core'
@@ -25,9 +24,9 @@ end
 
 helpers do
   def gen_id
-    base = rand(100000000).to_s
-    salt = Time.now.to_s
-    Zlib.crc32(base + salt).to_s(36)
+    base = rand(100000000)
+    salt = Time.now.to_i
+    (base + salt).to_s
   end
 end
 
